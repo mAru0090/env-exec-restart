@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.97"
+clap = { version = "4.5.34", features = ["derive"] }
 tempfile = "3.19.1"
 uuid = "1.16.0"

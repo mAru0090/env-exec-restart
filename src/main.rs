@@ -224,10 +224,10 @@ pub fn apply_env_removal(config: &Config) {
         let expanded_paths = expand_env_variables_vec(&config.paths);
 
         // プロジェクトルート、target/debug、target/release、target/debug/depsを除外
-        let project_root = std::env::var("PROJECT_ROOT").expect("PROJECT_ROOT should be set");
-        let project_root_path = Path::new(&project_root);
+        const PROJECT_ROOT: &str = env!("PROJECT_ROOT");
+        let project_root_path = Path::new(&PROJECT_ROOT);
         debug!("PROJECT_ROOT: {:?}", project_root_path);
-        std::thread::sleep(std::time::Duration::from_millis(10000));
+        // std::thread::sleep(std::time::Duration::from_millis(10000));
 
         let target_debug = project_root_path.join("target").join("debug");
         let target_release = project_root_path.join("target").join("release");

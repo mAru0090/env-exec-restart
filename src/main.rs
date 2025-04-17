@@ -39,9 +39,14 @@ use windows::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CO
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(short, long)]
-    config_file: String,
+    config_file: PathBuf,
     #[arg(short, long)]
     exec_path: PathBuf,
+    
+    #[arg(short, long)]
+    arg0_program: Option<PathBuf>,
+    #[arg(short, long)]
+    arg1_program_args: Option<Vec<String>>,   
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -361,14 +366,23 @@ fn main() -> R<()> {
                 let config_file = fs::canonicalize(&args.config_file)?;
                 let env_exec_path = &args.exec_path;
                 let config = read_toml(&temp_data.config_file)?;
-
+		let program = if args.arg0_program.is_some() {
+			args.arg0_program.clone().unwrap()
+		}else {
+			PathBuf::from(temp_data.program)
+		};
+		let program_args = if args.arg1_program_args.is_some() {
+			args.arg1_program_args.clone().unwrap()
+		}else {
+			temp_data.program_args.clone()
+		};
                 let mut cmd = Command::new(env_exec_path);
                 debug!("config: {:?}", config);
                 apply_env_removal(&config);
                 cmd.creation_flags(CREATE_NEW_CONSOLE.0)
                     .arg(&config_file)
-                    .arg(temp_data.program)
-                    .args(temp_data.program_args)
+                    .arg(program)
+                    .args(program_args)
                     .spawn()?;
                 //         std::thread::sleep(std::time::Duration::from_millis(50000));
                 if let Err(e) = std::fs::remove_file(&temp_file) {

@@ -1,0 +1,1 @@
+cargo run -- --config-file test.toml --exec-path "D:/win/program/rs/main-project/env-exec/target/release/env-exec.exe"

@@ -1,5 +1,7 @@
 envs = [
-	["IKUIKU_ENV","1919"]
+	["IKUIKU_ENV","1919"],
+	["OUOU_ENV",["1","2","3"]]
 ]
 paths = [
+	"test/test2",
 ]

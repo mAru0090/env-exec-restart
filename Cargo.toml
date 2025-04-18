@@ -1,3 +1,6 @@
+[[bin]]
+name = "eec-restart"
+path = "src/main.rs"
 [package]
 name = "env-exec-restart"
 version = "0.1.0"

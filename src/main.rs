@@ -40,7 +40,7 @@ use windows::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CO
 struct Args {
     #[arg(short, long)]
     config_file: PathBuf,
-    #[arg(short, long)]
+    #[arg(short, long,default_value = "eec")]
     exec_path: PathBuf,
     
     #[arg(long,required = false)]

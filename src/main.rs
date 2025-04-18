@@ -40,7 +40,7 @@ use windows::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CO
 struct Args {
     #[arg(short, long)]
     config_file: PathBuf,
-    #[arg(short, long,default_value = "eec")]
+    #[arg(short, long,default_value = "eec",required = false)]
     exec_path: PathBuf,
     
     #[arg(long,required = false)]
@@ -322,7 +322,7 @@ fn main() -> R<()> {
     #[cfg(debug_assertions)]
     let _ = SimpleLogger::new().init();
     let args = Args::parse();
-    let temp_lists = get_temp_lists("env-exec_")?;
+    let temp_lists = get_temp_lists("eec_")?;
 
     for (i, temp_file) in temp_lists.iter().enumerate() {
         let temp_binary_data: Vec<u8> = fs::read(temp_file)?;
@@ -360,7 +360,7 @@ fn main() -> R<()> {
                 "Temp data[{}] -> child process name: {}",
                 i, child_process_name
             );
-            if parent_process_name == "env-exec.exe" {
+            if parent_process_name == "eec.exe" {
                 // env-execのプロセスを終了
                 let _ = kill_process(temp_data.parent_pid)?;
                 let config_file = fs::canonicalize(&args.config_file)?;

@@ -43,9 +43,9 @@ struct Args {
     #[arg(short, long)]
     exec_path: PathBuf,
     
-    #[arg(short, long)]
+    #[arg(long,required = false)]
     arg0_program: Option<PathBuf>,
-    #[arg(short, long)]
+    #[arg(short, long,required = false)]
     arg1_program_args: Option<Vec<String>>,   
 }
 
@@ -380,8 +380,12 @@ fn main() -> R<()> {
                 debug!("config: {:?}", config);
                 apply_env_removal(&config);
                 cmd.creation_flags(CREATE_NEW_CONSOLE.0)
+                    .arg("run")
+                    .arg("--config-file")
                     .arg(&config_file)
+                    .arg("--program")
                     .arg(program)
+                    .arg("--")
                     .args(program_args)
                     .spawn()?;
                 //         std::thread::sleep(std::time::Duration::from_millis(50000));

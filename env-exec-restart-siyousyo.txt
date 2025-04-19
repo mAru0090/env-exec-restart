@@ -75,6 +75,16 @@ env-exec同様windows依存のコードになるため、Unixは非対応とな�
 ただこれらはcfgマクロ等でOS分岐をさせて別居処理を書くことで対応できるが、
 今のところ必要性はない。
 
+2025/04/18現在,env-exec含むenv-exec系すべてのツールをclapで実装し、
+バイナリ名も(env-exec -> eec, env-exec-restart -> eec-restart , env-exec-tag -> eec-tag)にした。
+それに伴う変更も問題なく終了したが、問題点が何点かある。
+・システム環境変数にあるenv-exec-restartのパスを削除してしまうこと。(これはenv-exec-restartの処理で、target/releaseは避ければ対応可)
+・env-exec-restart(eec-restart)を使用時、env-exec(eec)が見つからない場合,一時ファイルが残ってしまうこと。
+・env-exec(eec)を使用時、tomlファイル構文エラーなど、
+その他外部プログラムが実行できない等のエラーの際に、一時ファイルが残ったまま終了してしまうこと。
+
+2025/4/19現在,env-exec-restartの前述の問題点は解決した。
+
 
 
 == 適当な追加機能のメモ ==

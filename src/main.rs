@@ -40,13 +40,13 @@ use windows::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CO
 struct Args {
     #[arg(short, long)]
     config_file: PathBuf,
-    #[arg(short, long,default_value = "eec",required = false)]
+    #[arg(short, long, default_value = "eec", required = false)]
     exec_path: PathBuf,
-    
-    #[arg(long,required = false)]
+
+    #[arg(long, required = false)]
     arg0_program: Option<PathBuf>,
-    #[arg(short, long,required = false)]
-    arg1_program_args: Option<Vec<String>>,   
+    #[arg(short, long, required = false)]
+    arg1_program_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,7 +109,7 @@ fn get_temp_lists(s: &str) -> R<Vec<PathBuf>> {
             }
         }
     } else {
-        eprintln!("The specified path is not a directory.");
+        return Err(anyhow::anyhow!("The specified path is not a directory."));
     }
     debug!("temp_paths: {:?}", temp_paths);
     // 一致確認
@@ -123,7 +123,7 @@ fn get_temp_lists(s: &str) -> R<Vec<PathBuf>> {
                     debug!("Not found.");
                 }
             } else {
-                eprintln!("Invalid path: {:?}", path);
+                return Err(anyhow::anyhow!("Invalid path: {:?}", path));
             }
         }
     }
@@ -182,6 +182,7 @@ fn get_process_name(pid: u32) -> R<Option<String>> {
             PWSTR(buffer.as_mut_ptr()),
             &mut size,
         )?;
+
         let _ = CloseHandle(process_handle);
 
         if size == 0 {
@@ -241,7 +242,6 @@ pub fn apply_env_removal(config: &Config) {
         // 除外すべきパスのリストを作成
         let mut exclude_paths = vec![
             target_debug.to_string_lossy().to_string(),
-            target_release.to_string_lossy().to_string(),
             target_debug_deps.to_string_lossy().to_string(),
         ];
         // rustc --print sysroot で Rust ツールチェインの sysroot パスを取得
@@ -322,12 +322,15 @@ fn main() -> R<()> {
     #[cfg(debug_assertions)]
     let _ = SimpleLogger::new().init();
     let args = Args::parse();
+    // env-execが作成した一時ファイルリストを取得
     let temp_lists = get_temp_lists("eec_")?;
-
+    // 取得した一時ファイルごとに処理
     for (i, temp_file) in temp_lists.iter().enumerate() {
+        // 一時ファイル(バイナリファイル)から構造体にマップして取得
         let temp_binary_data: Vec<u8> = fs::read(temp_file)?;
         let temp_data: TempData = bincode::deserialize(&temp_binary_data)?;
         debug!("Read temp_data[{}]: {:?}", i, temp_data);
+        // 親プロセスと子プロセスの両方の有効性を返すローカル関数
         let parent_and_child_exists = |pid1: u32, pid2: u32| -> R<(bool, bool)> {
             let mut pid1_is_exist = false;
             let mut pid2_is_exist = false;
@@ -341,9 +344,16 @@ fn main() -> R<()> {
         };
         let (pid1_is_exist, pid2_is_exist) =
             parent_and_child_exists(temp_data.parent_pid, temp_data.child_pid)?;
+        // 親プロセスと子プロセス両方が有効の場合のみ処理
         if pid1_is_exist && pid2_is_exist {
-            let parent_process_name = if let Some(name) = get_process_name(temp_data.parent_pid)? {
+            let _parent_process_name = if let Some(name) = get_process_name(temp_data.parent_pid)? {
                 name.clone()
+            } else {
+                String::new()
+            };
+            let parent_process_name = if let Some((name, _)) = _parent_process_name.rsplit_once('.')
+            {
+                name.to_string()
             } else {
                 String::new()
             };
@@ -360,37 +370,69 @@ fn main() -> R<()> {
                 "Temp data[{}] -> child process name: {}",
                 i, child_process_name
             );
-            if parent_process_name == "eec.exe" {
+
+            if parent_process_name == "eec" {
+                let env_exec_path = &args.exec_path;
+
+                let is_program_valid = if let Ok(_) = Command::new(env_exec_path).output() {
+                    true
+                } else {
+                    false
+                };
+                if !is_program_valid {
+                    return Err(anyhow::anyhow!(
+                        "This program is invalid: {:?}",
+                        env_exec_path
+                    ));
+                }
+
+                // env-exec作成の一時ファイルから環境設定ファイルを取得
+                let temp_config_file = match read_toml(&temp_data.config_file) {
+                    Ok(c) => c,
+                    Err(err) => return Err(anyhow::anyhow!("{}", err)),
+                };
+
+                // env-exec-restartのプログラム引数から環境設定ファイルを取得
+                let config_path = Path::new(&args.config_file);
+
+                if !config_path.is_file() {
+                    return Err(anyhow::anyhow!(
+                        "The configuration file was not found or is not a valid file: {}",
+                        config_path.display()
+                    ));
+                }
+
+                let args_config_path = match fs::canonicalize(config_path) {
+                    Ok(config) => config,
+                    Err(err) => return Err(anyhow::anyhow!("{}", err)),
+                };
                 // env-execのプロセスを終了
                 let _ = kill_process(temp_data.parent_pid)?;
-                let config_file = fs::canonicalize(&args.config_file)?;
-                let env_exec_path = &args.exec_path;
-                let config = read_toml(&temp_data.config_file)?;
-		let program = if args.arg0_program.is_some() {
-			args.arg0_program.clone().unwrap()
-		}else {
-			PathBuf::from(temp_data.program)
-		};
-		let program_args = if args.arg1_program_args.is_some() {
-			args.arg1_program_args.clone().unwrap()
-		}else {
-			temp_data.program_args.clone()
-		};
+
+                let program = if args.arg0_program.is_some() {
+                    args.arg0_program.clone().unwrap()
+                } else {
+                    PathBuf::from(temp_data.program)
+                };
+                let program_args = if args.arg1_program_args.is_some() {
+                    args.arg1_program_args.clone().unwrap()
+                } else {
+                    temp_data.program_args.clone()
+                };
                 let mut cmd = Command::new(env_exec_path);
-                debug!("config: {:?}", config);
-                apply_env_removal(&config);
+                debug!("config: {:?}", temp_config_file);
+                apply_env_removal(&temp_config_file);
                 cmd.creation_flags(CREATE_NEW_CONSOLE.0)
                     .arg("run")
                     .arg("--config-file")
-                    .arg(&config_file)
+                    .arg(&args_config_path)
                     .arg("--program")
                     .arg(program)
                     .arg("--")
                     .args(program_args)
                     .spawn()?;
-                //         std::thread::sleep(std::time::Duration::from_millis(50000));
                 if let Err(e) = std::fs::remove_file(&temp_file) {
-                    error!("Failed to delete temp file: {}", e);
+                    return Err(anyhow::anyhow!("Failed to delete temp file: {}", e));
                 }
                 // env-execが起動した外部プログラムを終了
                 let _ = kill_process(temp_data.child_pid)?;

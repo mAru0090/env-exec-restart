@@ -4,13 +4,14 @@
 // ====================
 // ====================
 use anyhow::Result as R;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use inquire::Select;
 use log::*;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use simple_logger::SimpleLogger;
+use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -19,17 +20,16 @@ use std::io;
 use std::os::windows::ffi::OsStringExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::process::Command;
 use windows::core::PCWSTR;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
-use windows::Win32::System::Diagnostics::ToolHelp::CreateToolhelp32Snapshot;
-use windows::Win32::System::ProcessStatus::{EnumProcessModules, GetModuleBaseNameW};
+use windows::Win32::System::Threading::CREATE_NEW_CONSOLE;
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_QUERY_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ,
+    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_TERMINATE,
 };
-use windows::Win32::System::Threading::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CONSOLE};
+
 // ====================
 // ====================
 // 構造体定義部
@@ -316,14 +316,110 @@ pub fn apply_env_removal(config: &Config) {
 }
 
 // ====================
+// eec_<program>_<xxx>.tmp の形式から <program> を抽出する関数
+// ====================
+fn extract_name_from_filename(file_name: &str) -> Option<&str> {
+    let parts: Vec<&str> = file_name.split('_').collect();
+    if parts.len() >= 3 && parts[0] == "eec" {
+        Some(parts[1])
+    } else {
+        None
+    }
+}
+
+// ====================
+// 重複している <name> に対応するファイルがあれば選択させて、選ばれたファイルを返す
+// ====================
+fn select_from_duplicated(paths: &Vec<PathBuf>) -> Option<PathBuf> {
+    let mut name_map: HashMap<String, Vec<(PathBuf, TempData)>> = HashMap::new();
+
+    for path in paths {
+        let bin = fs::read(path).ok()?;
+        let data: TempData = bincode::deserialize(&bin).ok()?; // VecじゃなくTempDataに変更！
+
+        if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+            if let Some(name) = extract_name_from_filename(file_name) {
+                name_map
+                    .entry(name.to_string())
+                    .or_default()
+                    .push((path.clone(), data));
+            }
+        }
+    }
+
+    let duplicated: Vec<(String, Vec<(PathBuf, TempData)>)> = name_map
+        .into_iter()
+        .filter(|(_name, entries)| entries.len() > 1)
+        .collect();
+
+    if duplicated.is_empty() {
+        return None;
+    }
+
+    let mut display_map: HashMap<String, PathBuf> = HashMap::new();
+    let mut options: Vec<String> = Vec::new();
+
+    for (name, group) in duplicated {
+        for (path, data) in group {
+            let display = format!("PID: {} | FILE: {}", data.child_pid, name);
+            display_map.insert(display.clone(), path.clone());
+            options.push(display);
+        }
+    }
+
+    let selected = Select::new(
+        "外部プログラムが重複しています。下記から選んでください：",
+        options,
+    )
+    .prompt()
+    .ok()?;
+
+    display_map.get(&selected).cloned()
+}
+
+// ====================
 // メイン関数
 // ====================
 fn main() -> R<()> {
     #[cfg(debug_assertions)]
     let _ = SimpleLogger::new().init();
     let args = Args::parse();
+    /*
     // env-execが作成した一時ファイルリストを取得
     let temp_lists = get_temp_lists("eec_")?;
+    select_from_duplicated(&temp_lists);
+    */
+
+    let mut temp_lists = get_temp_lists("eec_")?;
+    // 重複一時ファイルをユーザーに選択させる
+    if let Some(selected) = select_from_duplicated(&temp_lists) {
+        // 重複名グループの名前を抽出
+        let selected_name = selected
+            .file_name()
+            .and_then(|f| f.to_str())
+            .and_then(|s| extract_name_from_filename(s))
+            .map(|s| s.to_string());
+        // 選択されたファイル名以外の重複ファイル名を除去
+        if let Some(name) = selected_name {
+            // 残すべきPathBuf（selected）以外の、同じ<name>のものを削除
+            temp_lists.retain(|p| {
+                let fname = p.file_name().and_then(|f| f.to_str());
+                if let Some(fname) = fname {
+                    if let Some(n) = extract_name_from_filename(fname) {
+                        // <name>が一致して、選ばれたやつじゃなければ除外
+                        return n != name || *p == selected;
+                    }
+                }
+                true
+            });
+
+            // selected を追加
+            if !temp_lists.contains(&selected) {
+                temp_lists.push(selected);
+            }
+        }
+    }
+
     // 取得した一時ファイルごとに処理
     for (i, temp_file) in temp_lists.iter().enumerate() {
         // 一時ファイル(バイナリファイル)から構造体にマップして取得
@@ -406,6 +502,7 @@ fn main() -> R<()> {
                     Ok(config) => config,
                     Err(err) => return Err(anyhow::anyhow!("{}", err)),
                 };
+
                 // env-execのプロセスを終了
                 let _ = kill_process(temp_data.parent_pid)?;
 
@@ -441,13 +538,5 @@ fn main() -> R<()> {
         }
     }
 
-    /*
-        let options = vec![
-            "name: C:/Users/osakana/test-config1.toml ppid: 3104230",
-            "name: C:/Users/osakana/test-config2.toml ppid: 3204024",
-            "name: C:/Users/osakana/test-config3.toml ppid: 3205204",
-        ];
-        let ans = Select::new("該当プロセスが3個見つかりました。", options).prompt();
-    */
     Ok(())
 }

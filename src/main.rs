@@ -361,7 +361,7 @@ fn select_from_duplicated(paths: &Vec<PathBuf>) -> Option<PathBuf> {
 
     for (name, group) in duplicated {
         for (path, data) in group {
-            let display = format!("PID: {} | FILE: {}", data.child_pid, name);
+            let display = format!("PID: {} | FILE: {}", data.child_pid, path.display());
             display_map.insert(display.clone(), path.clone());
             options.push(display);
         }

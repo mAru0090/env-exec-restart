@@ -21,6 +21,7 @@ use std::os::windows::ffi::OsStringExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::process::Stdio;
 use windows::core::PCWSTR;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -29,7 +30,7 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     PROCESS_TERMINATE,
 };
-
+use std::io::Read;
 // ====================
 // ====================
 // 構造体定義部
@@ -84,12 +85,16 @@ fn read_toml<P>(filename: P) -> Result<Config, toml::de::Error>
 where
     P: AsRef<Path>,
 {
+    // ファイルを開く
     let mut file = File::open(filename).map_err(|e| toml::de::Error::custom(e.to_string()))?;
+
+    // ファイルの内容を読み取る
     let mut contents = String::new();
-    io::Read::read_to_string(&mut file, &mut contents).unwrap();
+    file.read_to_string(&mut contents).map_err(|e| toml::de::Error::custom(e.to_string()))?;
+
+    // TOMLデータを構造体に変換
     toml::de::from_str(&contents)
 }
-
 // ====================
 // 指定の文字で一致の一時ファイルをリストで返す関数
 // ====================
@@ -518,15 +523,19 @@ fn main() -> R<()> {
                 };
                 let mut cmd = Command::new(env_exec_path);
                 debug!("config: {:?}", temp_config_file);
+
                 apply_env_removal(&temp_config_file);
-                cmd.creation_flags(CREATE_NEW_CONSOLE.0)
-                    .arg("run")
+
+                cmd.arg("run")
                     .arg("--config-file")
                     .arg(&args_config_path)
                     .arg("--program")
                     .arg(program)
                     .arg("--")
                     .args(program_args)
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
                     .spawn()?;
                 if let Err(e) = std::fs::remove_file(&temp_file) {
                     return Err(anyhow::anyhow!("Failed to delete temp file: {}", e));

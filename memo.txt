@@ -1,0 +1,5 @@
+2025/05/02
+	何故か、eec-restart使用後、neovimを起動するとneovimが動かなくなるバグがある。
+	具体的には、eec使用中 -> eec-restart -> 再起動後eec -> neovim -> 固まる
+	となる。再起動をしない場合は起こらない。
+

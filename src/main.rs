@@ -104,7 +104,7 @@ fn get_temp_lists(s: &str) -> R<Vec<PathBuf>> {
     let mut found_temp_paths = Vec::new();
     // temp_dir がディレクトリであるか確認
     if temp_dir.is_dir() {
-        for entry in fs::read_dir(temp_dir)? {
+        for entry in fs::read_dir(&temp_dir)? {
             let entry = entry?;
             let path = entry.path();
 
@@ -121,7 +121,12 @@ fn get_temp_lists(s: &str) -> R<Vec<PathBuf>> {
     if !temp_paths.is_empty() {
         for path in &temp_paths {
             if let Some(path_str) = path.to_str() {
-                if path_str.contains(s) {
+                let mut manifest_path = temp_dir.join("eec_manifest.txt");
+                debug!("{:?}",manifest_path);
+                if path_str ==  manifest_path.to_str().unwrap() {
+                    continue;
+                }
+                else if path_str.contains(s) {
                     debug!("Found: {}", path_str);
                     found_temp_paths.push(path.clone());
                 } else {
@@ -389,6 +394,11 @@ fn main() -> R<()> {
     #[cfg(debug_assertions)]
     let _ = SimpleLogger::new().init();
     let args = Args::parse();
+    {
+
+                let config_path = Path::new(&args.config_file);
+                debug!("Config path: {:?}",config_path);
+    }
     /*
     // env-execが作成した一時ファイルリストを取得
     let temp_lists = get_temp_lists("eec_")?;
